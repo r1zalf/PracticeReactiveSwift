@@ -26,10 +26,6 @@ class ViewController: UIViewController {
         setupCombine()
     }
     
-    func setupRx() {
-        
-    }
-    
     func setupCombine() {
         let namePublisher = NotificationCenter.default
             .publisher(for: UITextField.textDidChangeNotification, object: nameTextField)
