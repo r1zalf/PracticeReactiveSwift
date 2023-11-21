@@ -7,8 +7,8 @@
 
 import UIKit
 
-import Combine
-
+import RxSwift
+import RxCocoa
 
 class ViewController: UIViewController {
     
@@ -18,76 +18,66 @@ class ViewController: UIViewController {
     @IBOutlet var confirmPasswordTextField: UITextField!
     @IBOutlet var signUpButton: UIButton!
     
-    var cancellables: Set<AnyCancellable> = []
+    var autoBag = DisposeBag()
     
     override func viewDidLoad() {
         super.viewDidLoad()
         setupView()
-        setupCombine()
+        setupRxSwift()
     }
     
-    func setupCombine() {
-        let namePublisher = NotificationCenter.default
-            .publisher(for: UITextField.textDidChangeNotification, object: nameTextField)
-            .map { ($0.object as? UITextField)?.text }
-            .replaceNil(with: "")
-            .map { !$0.isEmpty }
+    func setupRxSwift() {
+       let nameStream = nameTextField.rx.text
+            .orEmpty
+            .skip(1)
+            .map{ !$0.isEmpty }
         
-        namePublisher.sink { value in
-            self.nameTextField.rightViewMode = value ? .never : .always
-        }.store(in: &cancellables)
+        nameStream.subscribe { isValid in
+            self.nameTextField.rightViewMode = isValid ? .never : .always
+        }.disposed(by: autoBag)
         
-        let emailPublisher = NotificationCenter.default
-            .publisher(for: UITextField.textDidChangeNotification, object: emailTextField)
-            .map { ($0.object as? UITextField)?.text }
-            .replaceNil(with: "")
-            .map { self.isValidEmail(from: $0) }
+        let emailStream = emailTextField.rx.text
+             .orEmpty
+             .skip(1)
+             .map{ self.isValidEmail(from: $0) }
+         
+        emailStream.subscribe { isValid in
+             self.emailTextField.rightViewMode = isValid ? .never : .always
+         }.disposed(by: autoBag)
         
-        emailPublisher.sink { value in
-            self.emailTextField.rightViewMode = value ? .never : .always
-        }.store(in: &cancellables)
+        let passwordStream = passwordTextField.rx.text
+             .orEmpty
+             .skip(1)
+             .map{ !$0.isEmpty }
+         
+        passwordStream.subscribe { isValid in
+             self.passwordTextField.rightViewMode = isValid ? .never : .always
+         }.disposed(by: autoBag)
         
-        let passwordPublisher = NotificationCenter.default
-            .publisher(for: UITextField.textDidChangeNotification, object: passwordTextField)
-            .map { ($0.object as? UITextField)?.text }
-            .replaceNil(with: "")
-            .map { !$0.isEmpty }
-        
-        passwordPublisher.sink { value in
-            self.passwordTextField.rightViewMode = value ? .never : .always
-        }.store(in: &cancellables)
-        
-        let confirmPasswordPublisher = Publishers.Merge(
-            NotificationCenter.default
-                .publisher(for: UITextField.textDidChangeNotification, object: passwordTextField)
-                .map { ($0.object as? UITextField)?.text }
-                .replaceNil(with: "")
-                .map { $0.elementsEqual(self.confirmPasswordTextField.text ?? "") },
-            NotificationCenter.default
-                .publisher(for: UITextField.textDidChangeNotification, object: confirmPasswordTextField)
-                .map { ($0.object as? UITextField)?.text }
-                .replaceNil(with: "")
-                .map { $0.elementsEqual(self.passwordTextField.text ?? "") }
+        let confirmPasswordStream = Observable.merge(
+            passwordTextField.rx.text
+                 .orEmpty
+                 .skip(1)
+                 .map{ $0.elementsEqual(self.confirmPasswordTextField.text ?? "")},
+            confirmPasswordTextField.rx.text
+                 .orEmpty
+                 .skip(1)
+                 .map{ $0.elementsEqual(self.passwordTextField.text ?? "") }
         )
+         
+        confirmPasswordStream.subscribe { isValid in
+             self.confirmPasswordTextField.rightViewMode = isValid ? .never : .always
+         }.disposed(by: autoBag)
         
-        confirmPasswordPublisher.sink { value in
-            self.confirmPasswordTextField.rightViewMode = value ? .never : .always
-        }.store(in: &cancellables)
         
-        let invalidFieldsPublisher = Publishers.CombineLatest4(
-            namePublisher, emailPublisher, passwordPublisher, confirmPasswordPublisher).map {
-                name, email, password, confirmPassword in
-                name && email && password && confirmPassword
-            }
-        invalidFieldsPublisher.sink { isValid in
-            if isValid {
-                self.signUpButton.isEnabled = true
-                self.signUpButton.backgroundColor = .systemBlue
-            } else {
-                self.signUpButton.isEnabled = false
-                self.signUpButton.backgroundColor = .systemGray
-            }
-        }.store(in: &cancellables)
+        let button = Observable.combineLatest(nameStream, emailStream, passwordStream, confirmPasswordStream) { name, email, pass, conPass in
+            name && email && pass && conPass
+        }
+        
+        button.subscribe { isValid in
+            self.signUpButton.isEnabled = isValid
+            self.signUpButton.backgroundColor = isValid ? .systemGreen : .systemGray
+        }.disposed(by: autoBag)
     }
     
     func setupView() {
